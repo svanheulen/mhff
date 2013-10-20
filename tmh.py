@@ -98,5 +98,5 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Extracts all images from a TMH image pack file from Monster Hunter')
     parser.add_argument('tmhfile', help='TMH file to extract')
     args = parser.parse_args()
-    extract_package(args.tmhfile)
+    extract_tmh(args.tmhfile)
 
