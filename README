@@ -4,8 +4,18 @@ games for the Playstation Portable.
 You can report issues, get the latest version, and view the source at:
   http://github.com/svanheulen/mhff
 
+All of these scripts require Python 3.x
+
 The data.py script can be used to extract files from the main DATA.BIN file
 that's on the UMD of any Monster Hunter game. For Monster Hunter 3rd and 2nd G
 you must first decrypt the DATA.BIN file.
 
 The package.py script can be used to extract files from package files.
+
+The tmh.py script can be used to extract images from TMH files. Note that this
+script is missing support for at least one TMH image format and has only been
+tested on Monster Hunter Portable 3rd files.
+
+The pmo.py script can be used to convert pmo models to Wavefront OBJ files.
+Note that this script is still expirimental and has only been tested on some
+Monster Hunter Portable 3rd models.
