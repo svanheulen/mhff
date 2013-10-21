@@ -17,5 +17,5 @@ script is missing support for at least one TMH image format and has only been
 tested on Monster Hunter Portable 3rd files.
 
 The pmo.py script can be used to convert pmo models to Wavefront OBJ files.
-Note that this script is still expirimental and has only been tested on some
+Note that this script is still experimental and has only been tested on some
 Monster Hunter Portable 3rd models.
