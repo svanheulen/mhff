@@ -41,8 +41,8 @@ def extract_data(data_file, out_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Extracts all files from the DATA.BIN file from Monster Hunter')
-    parser.add_argument('datafile', help='DATA.BIN file to extract')
-    parser.add_argument('outpath', nargs='?', default='', help='path to extract to')
+    parser.add_argument('inputfile', help='DATA.BIN input file')
+    parser.add_argument('outputpath', nargs='?', default='', help='output path')
     args = parser.parse_args()
-    extract_data(args.datafile, args.outpath)
+    extract_data(args.inputfile, args.outputpath)
 

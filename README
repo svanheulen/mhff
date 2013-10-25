@@ -12,8 +12,8 @@ you must first decrypt the DATA.BIN file.
 
 The package.py script can be used to extract files from package files.
 
-The tmh.py script can be used to extract images from TMH files. Note that this
-script is missing support for at least one TMH image format and has only been
+The tmh.py script can be used to extract textures from TMH files. Note that
+this script is missing support for the DXT3 and DXT5 formats and has only been
 tested on Monster Hunter Portable 3rd files.
 
 The pmo.py script can be used to convert pmo models to Wavefront OBJ files.

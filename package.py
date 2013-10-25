@@ -30,7 +30,7 @@ def extract_package(package_file):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Extracts all files from a package file from Monster Hunter')
-    parser.add_argument('packagefile', help='package file to extract')
+    parser.add_argument('inputfile', help='package input file')
     args = parser.parse_args()
-    extract_package(args.packagefile)
+    extract_package(args.inputfile)
 
