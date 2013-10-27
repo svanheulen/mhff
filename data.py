@@ -31,7 +31,7 @@ def extract_data(data_file, out_path):
         for i in range(file_count):
             toc.append([temp[i] * 2048, (temp[i+1] - temp[i]) * 2048])
         for i in range(file_count + 1, len(temp), 2):
-            if temp[i] >= file_count:
+            if temp[i] >= file_count or temp[i] <= 0:
                 break
             toc[temp[i]][1] = temp[i+1]
         for i in range(len(toc)):
