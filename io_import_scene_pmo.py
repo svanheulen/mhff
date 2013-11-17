@@ -36,9 +36,14 @@ def convert_rgba8(i):
 
 
 def run_ge(pmo):
-    bm = bmesh.new()
     file_address = pmo.tell()
     index_offset = 0
+    vertices = {}
+    normals = {}
+    uvs = {}
+    colors = {}
+    weights = {}
+    faces = []
     vertex_address = None
     index_address = None
     vertex_format = None
@@ -58,7 +63,7 @@ def run_ge(pmo):
         # VADDR - Vertex Address (BASE)
         elif command_type == 0x01:
             if vertex_address is not None:
-                index_offset = len(bm.verts)
+                index_offset = len(vertices)
             vertex_address = file_address + (command & 0xffffff)
         # IADDR - Index Address (BASE)
         elif command_type == 0x02:
@@ -68,7 +73,7 @@ def run_ge(pmo):
             primative_type = (command >> 16) & 7
             index_count = command & 0xffff
             command_address = pmo.tell()
-            index = range(len(bm.verts) - index_offset, len(bm.verts) + index_count - index_offset)
+            index = range(len(vertices) - index_offset, len(vertices) + index_count - index_offset)
             if index_format is not None:
                 index = array.array(index_format)
                 pmo.seek(index_address)
@@ -82,26 +87,22 @@ def run_ge(pmo):
                 position.z = vertex.pop() / position_trans
                 position.y = vertex.pop() / position_trans
                 position.x = vertex.pop() / position_trans
-                if len(bm.verts) > (i + index_offset):
-                    bm.verts[i + index_offset].co = position
-                else:
-                    for v in range(i + index_offset - len(bm.verts)):
-                        bm.verts.new()
-                    bm.verts.new(position)
+                vertices[i + index_offset] = position
                 if normal_trans is not None:
                     normal = mathutils.Vector()
                     normal.z = vertex.pop() / normal_trans
                     normal.y = vertex.pop() / normal_trans
                     normal.x = vertex.pop() / normal_trans
-                    bm.verts[i + index_offset].normal = normal
+                    normals[i + index_offset] = normal
                 if color_trans is not None:
-                    color = color_trans(vertex.pop()) # TODO: add vertex colors
+                    colors[i + index_offset] = color_trans(vertex.pop())
                 if texture_trans is not None:
-                    texture = mathutils.Vector() # TODO: add texture coordinates
+                    texture = mathutils.Vector()
                     texture.y = vertex.pop() / texture_trans
                     texture.x = vertex.pop() / texture_trans
+                    uvs[i + index_offset] = texture.to_2d()
                 if weight_trans is not None:
-                    weights = vertex[:] # TODO: add bone weights
+                    weights[i + index_offset] = vertex[:]
             pmo.seek(command_address)
             r = range(index_count - 2)
             if primative_type == 3:
@@ -109,10 +110,10 @@ def run_ge(pmo):
             elif primative_type != 4:
                 ValueError('Unsupported primative type: 0x%02X' % primative_type)
             for i in r:
-                v1 = bm.verts[index[i] + index_offset]
-                v2 = bm.verts[index[i+1] + index_offset]
-                v3 = bm.verts[index[i+2] + index_offset]
-                bm.faces.new((v1, v2, v3))
+                vert1 = index[i] + index_offset
+                vert2 = index[i+1] + index_offset
+                vert3 = index[i+2] + index_offset
+                faces.append((vert1, vert2, vert3))
         # RET - Return from Call
         elif command_type == 0x0b:
             break
@@ -166,39 +167,55 @@ def run_ge(pmo):
             face_order = command & 1 # TODO: handle face culling
         else:
             raise ValueError('Unknown GE command: 0x%02X' % command_type)
-    return bm
+    return vertices, normals, uvs, colors, weights, faces
+
+
+def create_mesh(mesh, num):
+    me = bpy.data.meshes.new('Mesh%04d' % num)
+    ob = bpy.data.objects.new('Mesh%04d' % num, me)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    dl = bm.verts.layers.deform.new()
+    for i in range(len(mesh)):
+        vg = ob.vertex_groups.new('VertexGroup%04d' % i)
+        for j in range(len(mesh[i][0])):
+            mesh[i][0][j] = bm.verts.new(mesh[i][0][j])
+        for face in mesh[i][5]:
+            face = bm.faces.new((mesh[i][0][face[0]], mesh[i][0][face[1]], mesh[i][0][face[2]]))
+            for vert in face.verts:
+                vert[dl][i] = 1.0
+    bm.to_mesh(me)
+    bm.free()
+    bpy.context.scene.objects.link(ob)
 
 
 def load_pmo_mh3(pmo):
     pmo_header = struct.unpack('I4f2H8I', pmo.read(0x38))
     for i in range(pmo_header[5]):
         pmo.seek(pmo_header[7] + i * 0x30)
-        group_header = struct.unpack('8f2I4H', pmo.read(0x30))
-        for j in range(group_header[12]):
-            pmo.seek(pmo_header[8] + ((group_header[13] + j) * 0x10))
+        mesh_header = struct.unpack('8f2I4H', pmo.read(0x30))
+        mesh = []
+        for j in range(mesh_header[12]):
+            pmo.seek(pmo_header[8] + ((mesh_header[13] + j) * 0x10))
             vertex_group_header = struct.unpack('2BH3I', pmo.read(0x10))
             pmo.seek(pmo_header[12] + vertex_group_header[3])
-            bm = run_ge(pmo)
-            me = bpy.data.meshes.new('Mesh%04d%04d' % (i, j))
-            bm.to_mesh(me)
-            ob = bpy.data.objects.new('Object%04d%04d' % (i, j), me)
-            bpy.context.scene.objects.link(ob)
+            vertex_group = run_ge(pmo)
+            mesh.append(vertex_group)
+        create_mesh(mesh, i)
 
 
 def load_pmo_mh2(pmo):
-        pmo_header = struct.unpack('I4f2H8I', pmo.read(0x38))
-        for i in range(pmo_header[5]):
-            pmo.seek(pmo_header[7] + i * 0x20)
-            group_header = struct.unpack('2f2I4H2I', pmo.read(0x20))
-            for j in range(group_header[6]):
-                pmo.seek(pmo_header[8] + ((group_header[7] + j) * 0x10))
-                vertex_group_header = struct.unpack('2BH3I', pmo.read(0x10))
-                pmo.seek(pmo_header[12] + vertex_group_header[3])
-                bm = run_ge(pmo)
-                me = bpy.data.meshes.new('Mesh%04d%04d' % (i, j))
-                bm.to_mesh(me)
-                ob = bpy.data.objects.new('Object%04d%04d' % (i, j), me)
-                bpy.context.scene.objects.link(ob)
+    pmo_header = struct.unpack('I4f2H8I', pmo.read(0x38))
+    for i in range(pmo_header[5]):
+        pmo.seek(pmo_header[7] + i * 0x20)
+        mesh_header = struct.unpack('2f2I4H2I', pmo.read(0x20))
+        for j in range(mesh_header[6]):
+            pmo.seek(pmo_header[8] + ((mesh_header[7] + j) * 0x10))
+            vertex_group_header = struct.unpack('2BH3I', pmo.read(0x10))
+            pmo.seek(pmo_header[12] + vertex_group_header[3])
+            vertex_group = run_ge(pmo)
+            mesh.append(vertex_group)
+        create_mesh(mesh, i)
 
 
 def load_pmo(pmo_file):
