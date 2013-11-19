@@ -106,7 +106,7 @@ def decode(mode, data):
     return None
 
 
-def extract_tmh(tmh_file, mtl_file):
+def convert_tmh(tmh_file, mtl_file):
     with open(tmh_file, 'rb') as tmh, open(mtl_file, 'w') as mtl:
         tmh_header = struct.unpack('8s2I', tmh.read(16))
         if tmh_header[0] != b'.TMH0.14':
@@ -128,14 +128,15 @@ def extract_tmh(tmh_file, mtl_file):
             if pixel_header[2] > 7:
                 image_format = 'BGRA'
             image = Image.frombytes('RGBA', pixel_header[3:], pixel_data, 'raw', image_format)
-            mtl.write('newmtl texture%04d\n' % i)
+            mtl.write('newmtl texture%02d\n' % i)
             mtl.write('Ka 1.0 1.0 1.0\n')
             mtl.write('Kd 1.0 1.0 1.0\n')
             mtl.write('Ks 0.0 0.0 0.0\n')
             mtl.write('illum 1\n')
-            mtl.write('map_Ka data/texture%04d.png\n' % i)
-            mtl.write('map_Kd data/texture%04d.png\n' % i)
-            image.transpose(Image.FLIP_TOP_BOTTOM).save(os.path.join(os.path.dirname(mtl_file), 'texture%04d.png' % i))
+            name = mtl_file.split('.')[0]
+            mtl.write('map_Ka %s%02d.png\n' % (name, i))
+            mtl.write('map_Kd %s%02d.png\n' % (name, i))
+            image.transpose(Image.FLIP_TOP_BOTTOM).save(os.path.join(os.path.dirname(mtl_file), '%s%02d.png' % (name, i)))
 
 
 if __name__ == '__main__':
