@@ -144,5 +144,5 @@ if __name__ == '__main__':
     parser.add_argument('inputfile', help='TMH input file')
     parser.add_argument('outputfile', help='MTL output file')
     args = parser.parse_args()
-    extract_tmh(args.inputfile, args.outputfile)
+    convert_tmh(args.inputfile, args.outputfile)
 
