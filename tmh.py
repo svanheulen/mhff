@@ -128,15 +128,16 @@ def convert_tmh(tmh_file, mtl_file):
             if pixel_header[2] > 7:
                 image_format = 'BGRA'
             image = Image.frombytes('RGBA', pixel_header[3:], pixel_data, 'raw', image_format)
-            mtl.write('newmtl texture%02d\n' % i)
+            dirname = os.path.dirname(mtl_file)
+            basename = os.path.basename(mtl_file).replace('.mtl', '')
+            mtl.write('newmtl texture{:02d}\n'.format(i))
             mtl.write('Ka 1.0 1.0 1.0\n')
             mtl.write('Kd 1.0 1.0 1.0\n')
             mtl.write('Ks 0.0 0.0 0.0\n')
             mtl.write('illum 1\n')
-            name = mtl_file.split('.')[0]
-            mtl.write('map_Ka %s%02d.png\n' % (name, i))
-            mtl.write('map_Kd %s%02d.png\n' % (name, i))
-            image.transpose(Image.FLIP_TOP_BOTTOM).save(os.path.join(os.path.dirname(mtl_file), '%s%02d.png' % (name, i)))
+            mtl.write('map_Ka {}{:02d}.png\n'.format(basename, i))
+            mtl.write('map_Kd {}{:02d}.png\n'.format(basename, i))
+            image.transpose(Image.FLIP_TOP_BOTTOM).save('{}{:02d}.png'.format(os.path.join(dirname, basename), i))
 
 
 if __name__ == '__main__':

@@ -17,6 +17,7 @@
 
 import argparse
 import array
+import os
 import struct
 
 
@@ -122,6 +123,7 @@ def run_ge(pmo, scale):
             if color != 0:
                 vertex_format += (None, None, None, None, 'H', 'H', 'H', 'I')[color]
                 color_trans = (None, None, None, None, 'rgb565', 'rgba5', 'rgba4', 'rgba8')[color]
+                print('WARNING: This model uses vertex colors.')
             normal = (command >> 5) & 3
             if normal != 0:
                 vertex_format += (None, '3b', '3h', '3f')[normal] # NOTE: when bypassing transform Z may be unsigned
@@ -232,6 +234,7 @@ def convert_mh2_pmo(pmo, obj):
 
 
 def convert_pmo(pmo_file, mtl_file, obj_file):
+    mtl_file = os.path.basename(mtl_file)
     with open(pmo_file, 'rb') as pmo, open(obj_file, 'w') as obj:
         type, version = struct.unpack('4s4s', pmo.read(8))
         if type == b'pmo\x00' and version == b'102\x00':
