@@ -195,7 +195,7 @@ def create_mesh(obj, offsets, mesh):
             obj.write('\n')
 
 
-def convert_mh3_pmo(pmo, obj):
+def convert_mh3_pmo(pmo, obj, second=None):
     offsets = {'v': 1, 'vt': 1, 'vn': 1}
     pmo_header = struct.unpack('I4f2H8I', pmo.read(0x38))
     for i in range(pmo_header[5]):
@@ -209,12 +209,16 @@ def convert_mh3_pmo(pmo, obj):
             vertex_group_header = struct.unpack('2BH3I', pmo.read(0x10))
             pmo.seek(pmo_header[11] + (mesh_header[11] + vertex_group_header[0]) * 16)
             material = struct.unpack('4I', pmo.read(16))[2]
-            pmo.seek(pmo_header[12] + vertex_group_header[3])
-            mesh.append(run_ge(pmo, scale) + (material,))
+            if second:
+                second.seek(vertex_group_header[3])
+                mesh.append(run_ge(second, scale) + (material,))
+            else:
+                pmo.seek(pmo_header[12] + vertex_group_header[3])
+                mesh.append(run_ge(pmo, scale) + (material,))
         create_mesh(obj, offsets, mesh)
 
 
-def convert_mh2_pmo(pmo, obj):
+def convert_mh2_pmo(pmo, obj, second=None):
     offsets = {'v': 1, 'vt': 1, 'vn': 1}
     pmo_header = struct.unpack('I4f2H8I', pmo.read(0x38))
     scale = pmo_header[2:5]
@@ -228,23 +232,34 @@ def convert_mh2_pmo(pmo, obj):
             vertex_group_header = struct.unpack('2BH3I', pmo.read(0x10))
             pmo.seek(pmo_header[11] + (mesh_header[5] + vertex_group_header[0]) * 16)
             material = struct.unpack('4I', pmo.read(16))[2]
-            pmo.seek(pmo_header[12] + vertex_group_header[3])
-            mesh.append(run_ge(pmo, scale) + (material,))
+            if second:
+                second.seek(vertex_group_header[3])
+                mesh.append(run_ge(second, scale) + (material,))
+            else:
+                pmo.seek(pmo_header[12] + vertex_group_header[3])
+                mesh.append(run_ge(pmo, scale) + (material,))
         create_mesh(obj, offsets, mesh)
 
 
-def convert_pmo(pmo_file, mtl_file, obj_file):
+def convert_pmo(pmo_file, mtl_file, obj_file, second_file=None):
     mtl_file = os.path.basename(mtl_file)
+    second = None
+    if second_file:
+        second = open(second_file, 'rb')
     with open(pmo_file, 'rb') as pmo, open(obj_file, 'w') as obj:
         type, version = struct.unpack('4s4s', pmo.read(8))
         if type == b'pmo\x00' and version == b'102\x00':
             obj.write('mtllib {}\n'.format(mtl_file))
-            convert_mh3_pmo(pmo, obj)
+            convert_mh3_pmo(pmo, obj, second)
         elif type == b'pmo\x00' and version == b'1.0\x00':
             obj.write('mtllib {}\n'.format(mtl_file))
-            convert_mh2_pmo(pmo, obj)
+            convert_mh2_pmo(pmo, obj, second)
         else:
+            if second:
+                second.close()
             raise ValueError('Invalid PMO file')
+    if second:
+        second.close()
 
 
 if __name__ == '__main__':
@@ -252,6 +267,7 @@ if __name__ == '__main__':
     parser.add_argument('pmofile', help='PMO input file')
     parser.add_argument('mtlfile', help='MTL input file')
     parser.add_argument('outputfile', help='OBJ output file')
+    parser.add_argument('--second', help='Second part of large monster PMO', required=False)
     args = parser.parse_args()
-    convert_pmo(args.pmofile, args.mtlfile, args.outputfile)
+    convert_pmo(args.pmofile, args.mtlfile, args.outputfile, args.second)
 
