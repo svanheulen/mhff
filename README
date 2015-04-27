@@ -4,6 +4,9 @@ games for the Playstation Portable.
 You can report issues, get the latest version, and view the source at:
   http://github.com/svanheulen/mhff
 
+To install the Blender add-ons, refer to this documentation:
+  http://www.blender.org/manual/extensions/python/add_ons.html
+
 All of these scripts require Python 3.x
 
 The data.py script can be used to extract files from the main DATA.BIN file
