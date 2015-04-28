@@ -30,7 +30,11 @@ import bpy
 
 
 def parse_vertex(raw_vertex):
-    return array.array('f', raw_vertex[:12])
+    vertex = array.array('f', raw_vertex[:12])
+    uv = array.array('f', raw_vertex[16:24])
+    bones = list(raw_vertex[24:26] + raw_vertex[32:33] + raw_vertex[34:35])
+    weights = [x / 255 for x in raw_vertex[26:28] + raw_vertex[33:34] + raw_vertex[35:36]]
+    return vertex, uv
 
 
 def parse_faces(vertex_start_index, raw_faces):
@@ -56,6 +60,12 @@ def parse_faces(vertex_start_index, raw_faces):
     return faces
 
 
+def build_uv_map(b_mesh, uvs, faces):
+    b_mesh.uv_textures.new()
+    for i,loop in enumerate(b_mesh.loops):
+        b_mesh.uv_layers[0].data[i].uv = uvs[loop.vertex_index]
+
+
 def load_mod(filename, context):
     mod = open(filename, 'rb')
     mod_header = struct.unpack('4s4H13I', mod.read(64))
@@ -67,15 +77,21 @@ def load_mod(filename, context):
         mesh_info = struct.unpack('HHIHBB9I', mod.read(48))
         mod.seek(mod_header[16] + mesh_info[6] * mesh_info[4] + mesh_info[7])
         vertices = []
+        uvs = []
         for j in range(mesh_info[1]):
-            vertices.append(parse_vertex(mod.read(mesh_info[4])))
+            vertex, uv = parse_vertex(mod.read(mesh_info[4]))
+            vertices.append(vertex)
+            if len(uv) != 0:
+                uvs.append(uv)
         mod.seek(mod_header[17] + mesh_info[9] * 2)
         faces = parse_faces(mesh_info[6], mod.read(mesh_info[10] * 2 + 2))
         b_mesh = bpy.data.meshes.new('imported_mesh_{}'.format(i))
         b_object = bpy.data.objects.new('imported_object_{}'.format(i), b_mesh)
         b_mesh.from_pydata(vertices, [], faces)
-        b_mesh.update()
+        b_mesh.update(calc_edges=True)
         bpy.context.scene.objects.link(b_object)
+        if len(uvs) != 0:
+            build_uv_map(b_mesh, uvs, faces)
     mod.close()
 
 
