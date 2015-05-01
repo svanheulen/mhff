@@ -29,6 +29,108 @@ import struct
 import bpy
 
 
+modifier_tables = (
+    (2, 8, -2, -8),
+    (5, 17, -5, -17),
+    (9, 29, -9, -29),
+    (13, 42, -13, -42),
+    (18, 60, -18, -60),
+    (24, 80, -24, -80),
+    (33, 106, -33, -106),
+    (47, 183, -47, -183)
+)
+
+
+def decode_etc1(image, data):
+    data = array.array('I', data)
+    image_pixels = [0.0, 0.0, 0.0, 1.0] * image.size[0] * image.size[1]
+    block_index = 0
+    while len(data) != 0:
+        alpha_part1 = 0
+        alpha_part2 = 0
+        if image.depth == 32:
+            alpha_part1 = data.pop(0)
+            alpha_part2 = data.pop(0)
+        pixel_indices = data.pop(0)
+        block_info = data.pop(0)
+        bc1 = [0, 0, 0]
+        bc2 = [0, 0, 0]
+        if block_info & 2 == 0:
+            bc1[0] = block_info >> 28 & 15
+            bc1[1] = block_info >> 20 & 15
+            bc1[2] = block_info >> 12 & 15
+            bc1 = [(x << 4) + x for x in bc1]
+            bc2[0] = block_info >> 24 & 15
+            bc2[1] = block_info >> 16 & 15
+            bc2[2] = block_info >> 8 & 15
+            bc2 = [(x << 4) + x for x in bc2]
+        else:
+            bc1[0] = block_info >> 27 & 31
+            bc1[1] = block_info >> 19 & 31
+            bc1[2] = block_info >> 11 & 31
+            bc2[0] = block_info >> 24 & 7
+            bc2[1] = block_info >> 16 & 7
+            bc2[2] = block_info >> 8 & 7
+            bc2 = [x + ((y > 3) and (y - 8) or y) for x, y in zip(bc1, bc2)]
+            bc1 = [(x << 3) + (x >> 2) for x in bc1]
+            bc2 = [(x << 3) + (x >> 2) for x in bc2]
+        flip = block_info & 1
+        tcw1 = block_info >> 5 & 7
+        tcw2 = block_info >> 2 & 7
+        for i in range(16):
+            mi = ((pixel_indices >> i) & 1) + ((pixel_indices >> (i + 15)) & 2)
+            c = None
+            if flip == 0 and i < 8 or flip != 0 and (i // 2 % 2) == 0:
+                m = modifier_tables[tcw1][mi]
+                c = [max(0, min(255, x + m)) for x in bc1]
+            else:
+                m = modifier_tables[tcw2][mi]
+                c = [max(0, min(255, x + m)) for x in bc2]
+            offset = block_index % 4
+            x = (block_index - offset) % (image.size[0] // 2) * 2
+            y = (block_index - offset) // (image.size[0] // 2) * 8
+            if offset & 1:
+                x += 4
+            if offset & 2:
+                y += 4
+            x += i // 4
+            y += i % 4
+            offset = (x + (image.size[1] - y - 1) * image.size[0]) * 4
+            image_pixels[offset] = c[0] / 255
+            image_pixels[offset+1] = c[1] / 255
+            image_pixels[offset+2] = c[2] / 255
+        block_index += 1
+    image.pixels = image_pixels
+    image.update()
+
+
+def load_tex(filename, name):
+    tex = open(filename, 'rb')
+    tex_header = struct.unpack('4s3I', tex.read(16))
+    constant = tex_header[1] & 0xfff
+    #unknown1 = (tex_header[1] >> 12) & 0xfff
+    size_shift = (tex_header[1] >> 24) & 0xf
+    #unknown2 = (tex_header[1] >> 28) & 0xf
+    mipmap_count = tex_header[2] & 0x3f
+    width = (tex_header[2] >> 6) & 0x1fff
+    height = (tex_header[2] >> 19) & 0x1fff
+    #unknown3 = tex_header[3] & 0xff
+    pixel_type = (tex_header[3] >> 8) & 0xff
+    #unknown5 = (tex_header[3] >> 16) & 0x1fff
+    offsets = array.array('I', tex.read(4 * mipmap_count))
+    if pixel_type == 11:
+        image = bpy.data.images.new('texture', width, height)
+        decode_etc1(image, tex.read(width*height//2))
+    elif pixel_type == 12:
+        image = bpy.data.images.new('texture', width, height, True)
+        decode_etc1(image, tex.read(width*height))
+    tex.close()
+
+
+def load_mrl():
+    pass
+
+
 def parse_vertex(raw_vertex):
     vertex = array.array('f', raw_vertex[:12])
     uv = array.array('f', raw_vertex[16:24])
@@ -105,6 +207,7 @@ class IMPORT_OT_mod(bpy.types.Operator):
 
     def execute(self, context):
         load_mod(self.filepath, context)
+        load_tex(self.filepath.replace('.58A15856', '_BM.241F5DEB'), 'test')
         return {'FINISHED'}
 
     def invoke(self, context, event):

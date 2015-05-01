@@ -34,87 +34,65 @@ modifier_tables = (
 )
 
 def decode_etc1(data, width, alpha=False):
-    data = array.array('Q', data)
-    pixel_count = len(data) * 8
+    data = array.array('I', data)
+    block_index = 0
+    pixel_count = len(data) * 4
     if not alpha:
         pixel_count *= 2
     new = array.array('I', range(pixel_count))
-    a = [255]*16
-    for i in range(len(data)):
-        if alpha and i % 2 == 0:
-            #for j in range(16):
-            #    a[j] = (data[i] >> (j * 4) & 15) * 17
-            pass
+    while len(data) != 0:
+        alpha_part1 = 0
+        alpha_part2 = 0
+        if alpha:
+            alpha_part1 = data.pop(0)
+            alpha_part2 = data.pop(0)
+        pixel_indices = data.pop(0)
+        block_info = data.pop(0)
+        bc1 = [0, 0, 0]
+        bc2 = [0, 0, 0]
+        if block_info & 2 == 0:
+            bc1[0] = block_info >> 28 & 15
+            bc1[1] = block_info >> 20 & 15
+            bc1[2] = block_info >> 12 & 15
+            bc1 = [(x << 4) + x for x in bc1]
+            bc2[0] = block_info >> 24 & 15
+            bc2[1] = block_info >> 16 & 15
+            bc2[2] = block_info >> 8 & 15
+            bc2 = [(x << 4) + x for x in bc2]
         else:
-            diffbit = data[i] & (1 << 33)
-            flipbit = data[i] & (1 << 32)
-            codeword1 = data[i] >> 37 & 7
-            codeword2 = data[i] >> 34 & 7
-            color1 = None
-            color2 = None
-            if diffbit == 0:
-                r1 = data[i] >> 60 & 15
-                r2 = data[i] >> 56 & 15
-                g1 = data[i] >> 52 & 15
-                g2 = data[i] >> 48 & 15
-                b1 = data[i] >> 44 & 15
-                b2 = data[i] >> 40 & 15
-                color1 = [(r1 << 4) + r1, (g1 << 4) + g1, (b1 << 4) + b1]
-                color2 = [(r2 << 4) + r2, (g2 << 4) + g2, (b2 << 4) + b2]
+            bc1[0] = block_info >> 27 & 31
+            bc1[1] = block_info >> 19 & 31
+            bc1[2] = block_info >> 11 & 31
+            bc2[0] = block_info >> 24 & 7
+            bc2[1] = block_info >> 16 & 7
+            bc2[2] = block_info >> 8 & 7
+            bc2 = [x + ((y > 3) and (y - 8) or y) for x, y in zip(bc1, bc2)]
+            bc1 = [(x >> 2) + (x << 3) for x in bc1]
+            bc2 = [(x >> 2) + (x << 3) for x in bc2]
+        flip = block_info & 1
+        tcw1 = block_info >> 5 & 7
+        tcw2 = block_info >> 2 & 7
+        for i in range(16):
+            mi = ((pixel_indices >> i) & 1) + ((pixel_indices >> (i + 15)) & 2)
+            c = None
+            if flip == 0 and i < 8 or flip != 0 and (i // 2 % 2) == 0:
+                m = modifier_tables[tcw1][mi]
+                c = [max(0, min(255, x + m)) for x in bc1]
             else:
-                r1 = data[i] >> 59 & 31
-                dr2 = data[i] >> 56 & 7
-                if dr2 > 3:
-                    dr2 -= 8
-                r2 = r1 + dr2
-                g1 = data[i] >> 51 & 31
-                dg2 = data[i] >> 48 & 7
-                if dg2 > 3:
-                    dg2 -= 8
-                g2 = g1 + dg2
-                b1 = data[i] >> 43 & 31
-                db2 = data[i] >> 40 & 7
-                if db2 > 3:
-                    db2 -= 8
-                b2 = b1 + db2
-                color1 = [(r1 >> 2) + (r1 << 3), (g1 >> 2) + (g1 << 3), (b1 >> 2) + (b1 << 3)]
-                color2 = [(r2 >> 2) + (r2 << 3), (g2 >> 2) + (g2 << 3), (b2 >> 2) + (b2 << 3)]
-            block = array.array('I')
-            for j in range(16):
-                modifier_index = ((data[i] >> j) & 1) + (((data[i] >> (j + 16)) & 1) << 1)
-                color = None
-                if flipbit == 0 and j < 8:
-                    modifier = modifier_tables[codeword1][modifier_index]
-                    color = [color1[0] + modifier, color1[1] + modifier, color1[2] + modifier]
-                elif flipbit == 0:
-                    modifier = modifier_tables[codeword2][modifier_index]
-                    color = [color2[0] + modifier, color2[1] + modifier, color2[2] + modifier]
-                elif flipbit != 0 and (j // 2 % 2) == 0:
-                    modifier = modifier_tables[codeword1][modifier_index]
-                    color = [color1[0] + modifier, color1[1] + modifier, color1[2] + modifier]
-                else:
-                    modifier = modifier_tables[codeword2][modifier_index]
-                    color = [color2[0] + modifier, color2[1] + modifier, color2[2] + modifier]
-                color[0] = min(255, max(0, color[0]))
-                color[1] = min(255, max(0, color[1]))
-                color[2] = min(255, max(0, color[2]))
-                color.append(a[j])
-                base = i
-                if alpha:
-                    base = (i // 2)
-                offset = base % 4
-                x = (base - offset) % (width // 2) * 2
-                y = (base - offset) // (width // 2) * 8
-                if offset == 1:
-                    x += 4
-                elif offset == 2:
-                    y += 4
-                elif offset == 3:
-                    x += 4
-                    y += 4
-                x = x + j // 4
-                y = y + j % 4
-                new[x + y * width] = struct.unpack('I', bytes(color))[0]
+                m = modifier_tables[tcw2][mi]
+                c = [max(0, min(255, x + m)) for x in bc2]
+            c.append(255)
+            offset = block_index % 4
+            x = (block_index - offset) % (width // 2) * 2
+            y = (block_index - offset) // (width // 2) * 8
+            if offset & 1:
+                x += 4
+            if offset & 2:
+                y += 4
+            x += i // 4
+            y += i % 4
+            new[x + y * width] = struct.unpack('I', bytes(c))[0]
+        block_index += 1
     return new.tobytes()
 
 def convert_tex(tex_file, png_file):
