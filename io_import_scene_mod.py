@@ -102,6 +102,7 @@ def decode_etc1(image, data):
         block_index += 1
     image.pixels = image_pixels
     image.update()
+    image.pack(True)
 
 
 def load_tex(filename, name):
