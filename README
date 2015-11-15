@@ -1,5 +1,5 @@
 These scripts are for manipulating various file types used in Monster Hunter
-games for the Playstation Portable.
+games for the Playstation Portable and Nintendo 3DS.
 
 You can report issues, get the latest version, and view the source at:
   http://github.com/svanheulen/mhff
@@ -9,16 +9,4 @@ To install the Blender add-ons, refer to this documentation:
 
 All of these scripts require Python 3.x
 
-The data.py script can be used to extract files from the main DATA.BIN file
-that's on the UMD of any Monster Hunter game. For Monster Hunter 3rd and 2nd G
-you must first decrypt the DATA.BIN file.
-
-The package.py script can be used to extract files from package files.
-
-The tmh.py script can be used to extract textures from TMH files. Note that
-this script is missing support for the DXT3 and DXT5 formats and has only been
-tested on Monster Hunter Portable 3rd files.
-
-The pmo.py script can be used to convert pmo models to Wavefront OBJ files.
-Note that this script is still experimental and has only been tested on some
-Monster Hunter Portable 3rd models.
+View the README file in each folder to learn more about those scripts.

@@ -1,0 +1,5 @@
+These scripts are for Monster Hunter games on the 3DS.
+
+The arc.py script can be used to extract ARC files found in the RomFS.
+
+The tex.py script can be used to convert TEX files to an image.
