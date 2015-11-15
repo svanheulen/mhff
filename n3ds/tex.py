@@ -41,8 +41,8 @@ def decode_etc1(data, width, alpha=False):
         pixel_count *= 2
     new = array.array('I', range(pixel_count))
     while len(data) != 0:
-        alpha_part1 = 255
-        alpha_part2 = 255
+        alpha_part1 = 0xffffffff
+        alpha_part2 = 0xffffffff
         if alpha:
             alpha_part1 = data.pop(0)
             alpha_part2 = data.pop(0)
