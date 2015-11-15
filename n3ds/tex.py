@@ -15,9 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import argparse
 import array
-import struct
-import sys
 
 from PIL import Image
 
@@ -94,7 +93,7 @@ def decode_etc1(data, width, alpha=False):
                 y += 4
             x += i // 4
             y += i % 4
-            new[x + y * width] = struct.unpack('I', bytes(c))[0]
+            new[x + y * width] = array.array('I', bytes(c))[0]
         block_index += 1
     return new.tobytes()
 
@@ -151,77 +150,87 @@ def convert_tex(tex_file, png_file):
     tex = open(tex_file, 'rb')
 
     magic = tex.read(4)
+    if magic != b'TEX\x00':
+        raise ValueError('not a TEX file')
     header = array.array('I', tex.read(12))
 
     constant = header[0] & 0xfff
+    if constant != 0xa5:
+        raise ValueError('unknown constant')
     unknown1 = (header[0] >> 12) & 0xfff
-    size_shift = (header[0] >> 24) & 0xf
-    unknown2 = (header[0] >> 28) & 0xf
+    size_shift = (header[0] >> 24) & 0xf # always == 0
+    unknown2 = (header[0] >> 28) & 0xf # 2 = normal, 6 = cube map
 
     mipmap_count = header[1] & 0x3f
     width = (header[1] >> 6) & 0x1fff
     height = (header[1] >> 19) & 0x1fff
 
-    unknown3 = header[2] & 0xff
+    texture_count = header[2] & 0xff
     color_type = (header[2] >> 8) & 0xff
-    unknown4 = (header[2] >> 16) & 0x1fff
+    unknown3 = (header[2] >> 16) & 0x1fff # always == 1
 
-    offsets = array.array('I', tex.read(4*mipmap_count))
+    if unknown2 == 6:
+        cube_map_junk = tex.read(0x6c) # data related to cube maps in some way
+        height *= 6
+    offsets = array.array('I', tex.read(4*mipmap_count*texture_count))
+    pixel_data_start = tex.tell()
+    pixel_data = None
+    if mipmap_count > 1:
+        pixel_data = tex.read(offsets[1] - offsets[0])
+        if unknown2 == 6:
+            for i in range(6):
+                tex.seek(pixel_data_start + offsets[i*mipmap_count])
+                pixel_data += tex.read(offsets[i*mipmap_count+1] - offsets[i*mipmap_count])
+    else:
+        pixel_data = tex.read()
+
+    tex.close()
 
     if color_type == 1:
-        pixel_data = tex.read(width*height*2)
         image = Image.frombytes('RGBA', (width, height), deblock(width, 4, decode_4444(pixel_data)), 'raw', 'ABGR')
         image.save(png_file)
     elif color_type == 2:
-        pixel_data = tex.read(width*height*2)
         image = Image.frombytes('RGBA', (width, height), deblock(width, 4, decode_1555(pixel_data)), 'raw', 'ABGR')
         image.save(png_file)
     elif color_type == 3:
-        pixel_data = tex.read(width*height*4)
         image = Image.frombytes('RGBA', (width, height), deblock(width, 4, pixel_data), 'raw', 'ABGR')
         image.save(png_file)
     elif color_type == 4:
-        pixel_data = tex.read(width*height*2)
         image = Image.frombytes('RGB', (width, height), deblock(width, 3, decode_565(pixel_data)), 'raw', 'BGR')
         image.save(png_file)
-    elif color_type == 5:
-        pixel_data = tex.read(width*height)
+    elif color_type == 5: # format may not be correct
         image = Image.frombytes('L', (width, height), deblock(width, 1, pixel_data), 'raw', 'L')
         image.save(png_file)
     elif color_type == 7:
-        pixel_data = array.array('H', tex.read(width*height*2))
+        pixel_data = array.array('H', pixel_data)
         pixel_data.byteswap()
         image = Image.frombytes('LA', (width, height), deblock(width, 2, pixel_data.tobytes()), 'raw', 'LA')
         image.save(png_file)
     elif color_type == 11:
-        pixel_data = tex.read((width*height)//2)
         image = Image.frombytes('RGBA', (width, height), decode_etc1(pixel_data, width), 'raw', 'RGBA')
         image.save(png_file)
     elif color_type == 12:
-        pixel_data = tex.read(width*height)
         image = Image.frombytes('RGBA', (width, height), decode_etc1(pixel_data, width, True), 'raw', 'RGBA')
         image.save(png_file)
-    elif color_type == 14:
-        pixel_data = tex.read((width*height)//2)
+    elif color_type == 14: # format may not be correct
         image = Image.frombytes('L', (width, height), deblock(width, 1, decode_4444(pixel_data)), 'raw', 'L')
         image.save(png_file)
-    elif color_type == 15:
-        pixel_data = tex.read((width*height)//2)
+    elif color_type == 15: # format may not be correct
         image = Image.frombytes('L', (width, height), deblock(width, 1, decode_4444(pixel_data)), 'raw', 'L')
         image.save(png_file)
-    elif color_type == 16:
-        pixel_data = tex.read(width*height)
+    elif color_type == 16: # format may not be correct
         image = Image.frombytes('L', (width, height), deblock(width, 1, pixel_data), 'raw', 'L')
         image.save(png_file)
     elif color_type == 17:
-        pixel_data = tex.read(width*height*3)
         image = Image.frombytes('RGB', (width, height), deblock(width, 3, pixel_data), 'raw', 'BGR')
         image.save(png_file)
     else:
-        print('unknown texture color type')
+        raise ValueError('unknown texture color type')
 
-    tex.close()
+parser = argparse.ArgumentParser(description='Convert a TEX file from Monster Hunter 4 Ultimate to an image')
+parser.add_argument('inputfile', help='TEX input file')
+parser.add_argument('outputfile', help='image output file')
+args = parser.parse_args()
 
-if __name__ == '__main__':
-    convert_tex(sys.argv[1], sys.argv[2])
+convert_tex(args.inputfile, args.outputfile)
 
