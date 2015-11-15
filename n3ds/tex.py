@@ -41,8 +41,8 @@ def decode_etc1(data, width, alpha=False):
         pixel_count *= 2
     new = array.array('I', range(pixel_count))
     while len(data) != 0:
-        alpha_part1 = 0
-        alpha_part2 = 0
+        alpha_part1 = 255
+        alpha_part2 = 255
         if alpha:
             alpha_part1 = data.pop(0)
             alpha_part2 = data.pop(0)
@@ -81,7 +81,10 @@ def decode_etc1(data, width, alpha=False):
             else:
                 m = modifier_tables[tcw2][mi]
                 c = [max(0, min(255, x + m)) for x in bc2]
-            c.append(255)
+            if i < 8:
+                c.append(((alpha_part1 >> (i * 4)) & 15) * 17)
+            else:
+                c.append(((alpha_part2 >> ((i - 8) * 4)) & 15) * 17)
             offset = block_index % 4
             x = (block_index - offset) % (width // 2) * 2
             y = (block_index - offset) // (width // 2) * 8
@@ -94,6 +97,55 @@ def decode_etc1(data, width, alpha=False):
             new[x + y * width] = struct.unpack('I', bytes(c))[0]
         block_index += 1
     return new.tobytes()
+
+def decode_565(data):
+    data = array.array('H', data)
+    new = bytearray()
+    for i in data:
+        new.append(round((i & 31) * (255 / 31)))
+        new.append(round((i >> 5 & 63) * (255 / 63)))
+        new.append(round((i >> 11 & 31) * (255 / 31)))
+    return bytes(new)
+
+def decode_1555(data):
+    data = array.array('H', data)
+    new = bytearray()
+    for i in data:
+        new.append((i & 1) * 255)
+        new.append(round((i >> 1 & 31) * (255 / 31)))
+        new.append(round((i >> 6 & 31) * (255 / 31)))
+        new.append(round((i >> 11 & 31) * (255 / 31)))
+    return bytes(new)
+
+def decode_4444(data):
+    new = bytearray()
+    for i in data:
+        new.append((i & 15) * 17)
+        new.append((i >> 4) * 17)
+    return bytes(new)
+
+def unpart1by1(n):
+    n &= 0x55555555
+    n = (n ^ (n >> 1)) & 0x33333333
+    n = (n ^ (n >> 2)) & 0x0f0f0f0f
+    n = (n ^ (n >> 4)) & 0x00ff00ff
+    return (n ^ (n >> 8)) & 0x0000ffff
+
+def deinterleave2(n):
+    return unpart1by1(n), unpart1by1(n >> 1)
+
+def deblock(width, size, data):
+    new = bytearray(data)
+    for i in range(len(data)//size):
+        offset = i % 128
+        block = i // 128
+        x, y = deinterleave2(offset)
+        if width >= 16:
+            x += 16 * (block % (width // 16))
+            y += 8 * (block // (width // 16))
+        for j in range(size):
+            new[(x+y*width)*size+j] = data[i*size+j]
+    return bytes(new)
 
 def convert_tex(tex_file, png_file):
     tex = open(tex_file, 'rb')
@@ -111,24 +163,65 @@ def convert_tex(tex_file, png_file):
     height = (header[1] >> 19) & 0x1fff
 
     unknown3 = header[2] & 0xff
-    unknown4 = (header[2] >> 8) & 0xff
-    unknown5 = (header[2] >> 16) & 0x1fff
+    color_type = (header[2] >> 8) & 0xff
+    unknown4 = (header[2] >> 16) & 0x1fff
 
     offsets = array.array('I', tex.read(4*mipmap_count))
 
-    if unknown4 == 11:
-        pixel_data = decode_etc1(tex.read(width*height//2), width)
-        image = Image.frombytes('RGBA', (width, height), pixel_data, 'raw', 'RGBA')
+    if color_type == 1:
+        pixel_data = tex.read(width*height*2)
+        image = Image.frombytes('RGBA', (width, height), deblock(width, 4, decode_4444(pixel_data)), 'raw', 'ABGR')
         image.save(png_file)
-    elif unknown4 == 12:
-        pixel_data = decode_etc1(tex.read(width*height), width, True)
-        image = Image.frombytes('RGBA', (width, height), pixel_data, 'raw', 'RGBA')
+    elif color_type == 2:
+        pixel_data = tex.read(width*height*2)
+        image = Image.frombytes('RGBA', (width, height), deblock(width, 4, decode_1555(pixel_data)), 'raw', 'ABGR')
+        image.save(png_file)
+    elif color_type == 3:
+        pixel_data = tex.read(width*height*4)
+        image = Image.frombytes('RGBA', (width, height), deblock(width, 4, pixel_data), 'raw', 'ABGR')
+        image.save(png_file)
+    elif color_type == 4:
+        pixel_data = tex.read(width*height*2)
+        image = Image.frombytes('RGB', (width, height), deblock(width, 3, decode_565(pixel_data)), 'raw', 'BGR')
+        image.save(png_file)
+    elif color_type == 5:
+        pixel_data = tex.read(width*height)
+        image = Image.frombytes('L', (width, height), deblock(width, 1, pixel_data), 'raw', 'L')
+        image.save(png_file)
+    elif color_type == 7:
+        pixel_data = array.array('H', tex.read(width*height*2))
+        pixel_data.byteswap()
+        image = Image.frombytes('LA', (width, height), deblock(width, 2, pixel_data.tobytes()), 'raw', 'LA')
+        image.save(png_file)
+    elif color_type == 11:
+        pixel_data = tex.read((width*height)//2)
+        image = Image.frombytes('RGBA', (width, height), decode_etc1(pixel_data, width), 'raw', 'RGBA')
+        image.save(png_file)
+    elif color_type == 12:
+        pixel_data = tex.read(width*height)
+        image = Image.frombytes('RGBA', (width, height), decode_etc1(pixel_data, width, True), 'raw', 'RGBA')
+        image.save(png_file)
+    elif color_type == 14:
+        pixel_data = tex.read((width*height)//2)
+        image = Image.frombytes('L', (width, height), deblock(width, 1, decode_4444(pixel_data)), 'raw', 'L')
+        image.save(png_file)
+    elif color_type == 15:
+        pixel_data = tex.read((width*height)//2)
+        image = Image.frombytes('L', (width, height), deblock(width, 1, decode_4444(pixel_data)), 'raw', 'L')
+        image.save(png_file)
+    elif color_type == 16:
+        pixel_data = tex.read(width*height)
+        image = Image.frombytes('L', (width, height), deblock(width, 1, pixel_data), 'raw', 'L')
+        image.save(png_file)
+    elif color_type == 17:
+        pixel_data = tex.read(width*height*3)
+        image = Image.frombytes('RGB', (width, height), deblock(width, 3, pixel_data), 'raw', 'BGR')
         image.save(png_file)
     else:
-        print('unknown format')
+        print('unknown texture color type')
 
     tex.close()
 
 if __name__ == '__main__':
-    convert_tex(sys.argv[1], 'test.png')
+    convert_tex(sys.argv[1], sys.argv[2])
 
