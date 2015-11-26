@@ -22,8 +22,8 @@ import zlib
 
 
 file_types = [
-    # Monster Hunter 4G file types
-    ['rArchive', 'arc'], # not inside any arc
+    # Monster Hunter 4 Ultimate file types
+    ['rArchive', 'arc'],
     ['rCameraList', 'lcm'],
     ['rChainCol', 'ccl'],
     ['rCnsTinyChain', 'ctc'],
@@ -43,8 +43,8 @@ file_types = [
     ['rLayoutAnimeList', 'lanl'],
     ['rLayoutFont', 'lfd'],
     ['rLayoutMessage', 'lmd'],
-    ['rLtProceduralTexture', 'ptex'], # not inside any arc
-    ['rLtShader', 'lfx'], # not inside any arc
+    ['rLtProceduralTexture', 'ptex'],
+    ['rLtShader', 'lfx'],
     ['rLtSoundBank', 'sbk'],
     ['rLtSoundCategoryFilter', 'cfl'],
     ['rLtSoundRequest', 'srq'],
@@ -57,7 +57,7 @@ file_types = [
     ['rMhMotionEffect', 'mef'],
     ['rModel', 'mod'],
     ['rMotionList', 'lmt'],
-    ['rMovieOnDisk', 'moflex'], # not inside any arc
+    ['rMovieOnDisk', 'moflex'],
     ['rQuestData', 'mib'],
     ['rScheduler', 'sdl'],
     ['rSoundAttributeSe', 'ase'],
@@ -224,41 +224,45 @@ file_types = [
     ['rWeapon14MsgData', 'w14m']
 ]
 
+def gen_file_type_codes():
+    return [(zlib.crc32(file_type[0].encode()) ^ 0xffffffff) & 0x7fffffff for file_type in file_types]
+
 def extract_arc(arc_file, output_path):
     if not os.path.isdir(output_path):
         raise ValueError('output path: must be existing directory')
     arc = open(arc_file, 'rb')
-    arc_header = struct.unpack('4sHHI', arc.read(12))
-    if arc_header[0] != b'ARC\x00':
+    magic, version, file_count, unknown = struct.unpack('4sHHI', arc.read(12))
+    if magic != b'ARC\x00':
         raise ValueError('header: invalid magic')
-    if arc_header[1] not in [0x13, 0x11]: # 0x13 = MH4G, 0x11 = MHX
+    if version not in [0x13, 0x11]: # 0x13 = MH4U, 0x11 = MHX
         raise ValueError('header: invalid version')
-    if arc_header[2] == 0:
-        raise ValueError('header: invalid file count')
-    file_type_codes = [(zlib.crc32(file_type[0].encode()) ^ 0xffffffff) & 0x7fffffff for file_type in file_types]
-    for i in range(arc_header[2]):
-        file_entry = struct.unpack('64sIIII', arc.read(0x50))
-        pos = arc.tell()
-        arc.seek(file_entry[4])
-        file_data = arc.read(file_entry[2])
-        if len(file_data) != file_entry[2]:
-            raise ValueError('file entry: wrong compressed file size')
-        file_data = zlib.decompress(file_data)
-        if len(file_data) != file_entry[3] & 0x0fffffff:
-            raise ValueError('file entry: wrong decompressed file size')
-        arc.seek(pos)
+    file_type_codes = gen_file_type_codes()
+    toc = arc.read(file_count * 0x50)
+    for i in range(file_count):
+        file_name, file_type_code, compressed_size, size, offset = struct.unpack('64sIIII', toc[i*0x50:(i+1)*0x50])
         file_type = 'UNKNOWN'
-        file_extension = '{:08X}'.format(file_entry[1])
-        if file_entry[1] in file_type_codes:
-            file_type, file_extension = file_types[file_type_codes.index(file_entry[1])]
-        file_name = os.path.join(*file_entry[0].decode().strip('\x00').split('\\')) +'.' + file_extension
-        print('extracting: {}, type: {}, compressed size: {}, size: {}'.format(file_name, file_type, file_entry[2], file_entry[3] & 0x0fffffff))
+        file_extension = '{:08X}'.format(file_type_code)
+        if file_type_code in file_type_codes:
+            file_type, file_extension = file_types[file_type_codes.index(file_type_code)]
+        file_name = os.path.join(*file_name.decode().strip('\x00').split('\\')) + '.' + file_extension
+        if version == 0x13:
+            size &= 0x0fffffff
+        else:
+            size &= 0x1fffffff
+        print('extracting: {}, type: {}, compressed size: {}, size: {}'.format(file_name, file_type, compressed_size, size))
+        arc.seek(offset)
+        file_data = arc.read(compressed_size)
+        if len(file_data) != compressed_size:
+            raise ValueError('table of contents: wrong compressed file size')
+        file_data = zlib.decompress(file_data)
+        if len(file_data) != size:
+            raise ValueError('table of contents: wrong file size')
         file_name = os.path.join(output_path, file_name)
         os.makedirs(os.path.dirname(file_name), exist_ok=True)
         open(file_name, 'wb').write(file_data)
     arc.close()
 
-parser = argparse.ArgumentParser(description='Extracts an ARC file from Monster Hunter 4 Ultimate')
+parser = argparse.ArgumentParser(description='Extracts files from an ARC file from MH4U and MHX')
 parser.add_argument('inputfile', help='ARC input file')
 parser.add_argument('outputpath', nargs='?', default='./', help='output path')
 args = parser.parse_args()
