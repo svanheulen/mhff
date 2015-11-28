@@ -17,8 +17,7 @@
 
 import argparse
 import array
-
-from PIL import Image
+import os
 
 
 modifier_tables = (
@@ -93,30 +92,11 @@ def decode_etc1(data, width, alpha=False):
                 y += 4
             x += i // 4
             y += i % 4
-            new[x + y * width] = array.array('I', bytes(c))[0]
+            new[x + y * width] = array.array('I', bytes(c[::-1]))[0]
         block_index += 1
     return new.tobytes()
 
-def decode_565(data):
-    data = array.array('H', data)
-    new = bytearray()
-    for i in data:
-        new.append(round((i & 31) * (255 / 31)))
-        new.append(round((i >> 5 & 63) * (255 / 63)))
-        new.append(round((i >> 11 & 31) * (255 / 31)))
-    return bytes(new)
-
-def decode_1555(data):
-    data = array.array('H', data)
-    new = bytearray()
-    for i in data:
-        new.append((i & 1) * 255)
-        new.append(round((i >> 1 & 31) * (255 / 31)))
-        new.append(round((i >> 6 & 31) * (255 / 31)))
-        new.append(round((i >> 11 & 31) * (255 / 31)))
-    return bytes(new)
-
-def decode_4444(data):
+def decode_half_byte(data):
     new = bytearray()
     for i in data:
         new.append((i & 15) * 17)
@@ -146,85 +126,106 @@ def deblock(width, size, data):
             new[(x+y*width)*size+j] = data[i*size+j]
     return bytes(new)
 
-def convert_tex(tex_file, png_file):
+def convert_tex(tex_file, dds_file):
     tex = open(tex_file, 'rb')
-
-    header = array.array('I', tex.read(16))
-    if header[0] != 0x584554:
-        raise ValueError('not a TEX file')
-
-    constant = header[1] & 0xfff
+    tex_header = array.array('I', tex.read(16))
+    if tex_header[0] != 0x584554:
+        raise ValueError('unknown magic')
+    constant = tex_header[1] & 0xfff
     if constant not in [0xa5, 0xa6]:
         raise ValueError('unknown constant')
-    unknown1 = (header[1] >> 12) & 0xfff
-    size_shift = (header[1] >> 24) & 0xf # always == 0
-    unknown2 = (header[1] >> 28) & 0xf # 2 = normal, 6 = cube map
-
-    mipmap_count = header[2] & 0x3f
-    width = (header[2] >> 6) & 0x1fff
-    height = (header[2] >> 19) & 0x1fff
-
-    texture_count = header[3] & 0xff
-    color_type = (header[3] >> 8) & 0xff
-    unknown3 = (header[3] >> 16) & 0x1fff # always == 1
-
-    if unknown2 == 6:
-        cube_map_junk = tex.read(0x6c) # data related to cube maps in some way
-        height *= 6
-    offsets = array.array('I', tex.read(4*mipmap_count*texture_count))
+    unknown1 = (tex_header[1] >> 12) & 0xfff
+    size_shift = (tex_header[1] >> 24) & 0xf # always == 0
+    cube_map = (tex_header[1] >> 28) & 0xf # 2 = normal, 6 = cube map
+    mipmap_count = tex_header[2] & 0x3f
+    width = (tex_header[2] >> 6) & 0x1fff
+    height = (tex_header[2] >> 19) & 0x1fff
+    texture_count = tex_header[3] & 0xff
+    color_type = (tex_header[3] >> 8) & 0xff
+    if color_type not in (1, 2, 3, 4, 5, 7, 11, 12, 14, 15, 16, 17):
+        raise ValueError('unknown color type')
+    unknown3 = (tex_header[3] >> 16) & 0x1fff # always == 1
+    dds_header = array.array('I', [0x20534444, 124, 0x100f, height, width, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0x1000, 0, 0, 0, 0])
+    if cube_map == 6:
+        dds_header[27] |= 0x8
+        dds_header[28] = 0xfe00
+        tex.seek(0x6c, os.SEEK_CUR) # data related to cube maps in some way
+    offsets = array.array('I', tex.read(mipmap_count * texture_count * 4))
     pixel_data_start = tex.tell()
-    pixel_data = None
+    pixel_data = []
     if mipmap_count > 1:
-        pixel_data = tex.read(offsets[1] - offsets[0])
-        if unknown2 == 6:
-            for i in range(6):
-                tex.seek(pixel_data_start + offsets[i*mipmap_count])
-                pixel_data += tex.read(offsets[i*mipmap_count+1] - offsets[i*mipmap_count])
-    else:
-        pixel_data = tex.read()
-
-    tex.close()
-
+        dds_header[2] |= 0x20000
+        dds_header[7] = mipmap_count
+        dds_header[27] |= 0x400008
     if color_type == 1:
-        image = Image.frombytes('RGBA', (width, height), deblock(width, 4, decode_4444(pixel_data)), 'raw', 'ABGR')
-        image.save(png_file)
+        dds_header[20] = 0x41
+        dds_header[22] = 16
+        dds_header[23] = 0xf000
+        dds_header[24] = 0xf00
+        dds_header[25] = 0xf0
+        dds_header[26] = 0xf
     elif color_type == 2:
-        image = Image.frombytes('RGBA', (width, height), deblock(width, 4, decode_1555(pixel_data)), 'raw', 'ABGR')
-        image.save(png_file)
-    elif color_type == 3:
-        image = Image.frombytes('RGBA', (width, height), deblock(width, 4, pixel_data), 'raw', 'ABGR')
-        image.save(png_file)
+        dds_header[20] = 0x41
+        dds_header[22] = 16
+        dds_header[23] = 0xf800
+        dds_header[24] = 0x7c0
+        dds_header[25] = 0x3e
+        dds_header[26] = 0x1
+    elif color_type in (3, 11, 12):
+        dds_header[20] = 0x41
+        dds_header[22] = 32
+        dds_header[23] = 0xff000000
+        dds_header[24] = 0xff0000
+        dds_header[25] = 0xff00
+        dds_header[26] = 0xff
     elif color_type == 4:
-        image = Image.frombytes('RGB', (width, height), deblock(width, 3, decode_565(pixel_data)), 'raw', 'BGR')
-        image.save(png_file)
-    elif color_type == 5: # format may not be correct
-        image = Image.frombytes('L', (width, height), deblock(width, 1, pixel_data), 'raw', 'L')
-        image.save(png_file)
+        dds_header[20] = 0x40
+        dds_header[22] = 16
+        dds_header[23] = 0xf800
+        dds_header[24] = 0x7e0
+        dds_header[25] = 0x1f
+    elif color_type in (5, 14, 15, 16): # format may not be correct
+        dds_header[20] = 0x20000
+        dds_header[22] = 8
+        dds_header[23] = 0xff
     elif color_type == 7:
-        pixel_data = array.array('H', pixel_data)
-        pixel_data.byteswap()
-        image = Image.frombytes('LA', (width, height), deblock(width, 2, pixel_data.tobytes()), 'raw', 'LA')
-        image.save(png_file)
-    elif color_type == 11:
-        image = Image.frombytes('RGBA', (width, height), decode_etc1(pixel_data, width), 'raw', 'RGBA')
-        image.save(png_file)
-    elif color_type == 12:
-        image = Image.frombytes('RGBA', (width, height), decode_etc1(pixel_data, width, True), 'raw', 'RGBA')
-        image.save(png_file)
-    elif color_type == 14: # format may not be correct
-        image = Image.frombytes('L', (width, height), deblock(width, 1, decode_4444(pixel_data)), 'raw', 'L')
-        image.save(png_file)
-    elif color_type == 15: # format may not be correct
-        image = Image.frombytes('L', (width, height), deblock(width, 1, decode_4444(pixel_data)), 'raw', 'L')
-        image.save(png_file)
-    elif color_type == 16: # format may not be correct
-        image = Image.frombytes('L', (width, height), deblock(width, 1, pixel_data), 'raw', 'L')
-        image.save(png_file)
-    elif color_type == 17:
-        image = Image.frombytes('RGB', (width, height), deblock(width, 3, pixel_data), 'raw', 'BGR')
-        image.save(png_file)
-    else:
-        raise ValueError('unknown texture color type')
+        dds_header[20] = 0x20001
+        dds_header[22] = 16
+        dds_header[23] = 0xff00
+        dds_header[26] = 0xff
+    elif color_type in (17):
+        dds_header[20] = 0x40
+        dds_header[22] = 24
+        dds_header[23] = 0xff0000
+        dds_header[24] = 0xff00
+        dds_header[25] = 0xff
+    dds_header[5] = (width * dds_header[22] + 7) // 8
+    main_data_size = width * height
+    if color_type in (11, 14, 15):
+        main_data_size //= 2
+    if color_type in (1, 2, 4, 7):
+        main_data_size *= 2
+    if color_type == 17:
+        main_data_size *= 3
+    if color_type == 3:
+        main_data_size *= 4
+    for i in range(mipmap_count):
+        for j in range(texture_count):
+            tex.seek(pixel_data_start + offsets[i * texture_count + j])
+            data = tex.read(main_data_size // (1 << (i * 2)))
+            if color_type in (14, 15):
+                data = decode_half_byte(data)
+            if color_type in (11, 12):
+                data = decode_etc1(data, width // (1 << i), color_type == 12)
+            else:
+                data = deblock(width // (1 << i), dds_header[22] // 8, data)
+            pixel_data.append(data)
+    tex.close()
+    dds = open(dds_file, 'wb')
+    dds.write(dds_header.tobytes())
+    for data in pixel_data:
+        dds.write(data)
+    dds.close()
 
 parser = argparse.ArgumentParser(description='Convert a TEX file from Monster Hunter 4 Ultimate to an image')
 parser.add_argument('inputfile', help='TEX input file')
