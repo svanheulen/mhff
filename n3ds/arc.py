@@ -345,10 +345,42 @@ def extract_arc(arc_file, output_path):
         open(file_name, 'wb').write(file_data)
     arc.close()
 
+def create_arc(arc_file, input_files):
+    arc = open(arc_file, 'wb')
+    arc.write(struct.pack('4sHHI', b'ARC\x00', 0x11, len(input_files), 0))
+    file_type_codes = gen_file_type_codes()
+    file_data_pos = len(input_files) * 0x50 + 12
+    for i in range(len(input_files)):
+        file_name, file_extension = os.path.splitext(input_files[i])
+        file_name = file_name.replace('/', '\\')
+        file_extension = file_extension.strip('.')
+        file_type_code = 0
+        for j in range(len(file_types)):
+            if file_extension == file_types[j][1]:
+                file_type_code = file_type_codes[j]
+        file_data = open(input_files[i], 'rb').read()
+        size = len(file_data) | 0x40000000
+        file_data = zlib.compress(file_data)
+        compressed_size = len(file_data)
+        arc.seek(i*0x50+12)
+        arc.write(struct.pack('64sIIII', file_name.encode(), file_type_code, compressed_size, size, file_data_pos))
+        arc.seek(file_data_pos)
+        arc.write(file_data)
+        file_data_pos += len(file_data)
+    arc.close()
+
 parser = argparse.ArgumentParser(description='Extracts files from an ARC file from MH4U and MHX')
-parser.add_argument('inputfile', help='ARC input file')
-parser.add_argument('outputpath', nargs='?', default='./', help='output path')
+subparsers = parser.add_subparsers(dest='mode')
+parser_x = subparsers.add_parser('x')
+parser_x.add_argument('inputfile', help='ARC input file')
+parser_x.add_argument('outputpath', nargs='?', default='./', help='output path')
+parser_c = subparsers.add_parser('c')
+parser_c.add_argument('outputfile', help='ARC output file')
+parser_c.add_argument('inputfile', nargs='+', help='input files')
 args = parser.parse_args()
 
-extract_arc(args.inputfile, args.outputpath)
+if args.mode == 'x':
+    extract_arc(args.inputfile, args.outputpath)
+elif args.mode == 'c':
+    create_arc(args.outputfile, args.inputfile)
 
