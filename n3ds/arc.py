@@ -251,7 +251,7 @@ file_types = [
     ['rFreeHuntData', 'fht'],
     ['rGeyserPointData', 'gpd'],
     ['rGuestEffectiveAttr', 'atr'],
-    ['rGuestQuestData', 'ext'],
+    ['rGuestQuestData', 'mib'],
     ['rGuestRemData', 'rem'],
     ['rInsectAttrFeed', 'iaf'],
     ['rInsectGrowFeed', 'igf'],
@@ -358,6 +358,7 @@ def create_arc(arc_file, input_files):
         for j in range(len(file_types)):
             if file_extension == file_types[j][1]:
                 file_type_code = file_type_codes[j]
+                break
         file_data = open(input_files[i], 'rb').read()
         size = len(file_data) | 0x40000000
         file_data = zlib.compress(file_data)
