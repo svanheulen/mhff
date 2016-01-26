@@ -383,5 +383,13 @@ args = parser.parse_args()
 if args.mode == 'x':
     extract_arc(args.inputfile, args.outputpath)
 elif args.mode == 'c':
-    create_arc(args.outputfile, args.inputfile)
+    input_files = []
+    for input_file in args.inputfile:
+        if os.path.isdir(input_file):
+            for dirpath, dirnames, filenames in os.walk(input_file):
+                for file_name in filenames:
+                    input_files.append(os.path.join(dirpath, file_name))
+        else:
+            input_files.append(input_file)
+    create_arc(args.outputfile, input_files)
 

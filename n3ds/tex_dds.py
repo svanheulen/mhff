@@ -126,7 +126,7 @@ def deblock(width, size, data):
             new[(x+y*width)*size+j] = data[i*size+j]
     return bytes(new)
 
-def convert_tex(tex_file, dds_file):
+def convert_tex(tex_file, dds_file=None):
     tex = open(tex_file, 'rb')
     tex_header = array.array('I', tex.read(16))
     if tex_header[0] != 0x584554:
@@ -193,7 +193,7 @@ def convert_tex(tex_file, dds_file):
         dds_header[22] = 16
         dds_header[23] = 0xff00
         dds_header[26] = 0xff
-    elif color_type in (17):
+    elif color_type == 17:
         dds_header[20] = 0x40
         dds_header[22] = 24
         dds_header[23] = 0xff0000
@@ -221,6 +221,8 @@ def convert_tex(tex_file, dds_file):
                 data = deblock(width // (1 << i), dds_header[22] // 8, data)
             pixel_data.append(data)
     tex.close()
+    if dds_file is None:
+        dds_file = '{}.dds'.format(tex_file)
     dds = open(dds_file, 'wb')
     dds.write(dds_header.tobytes())
     for data in pixel_data:
@@ -229,8 +231,14 @@ def convert_tex(tex_file, dds_file):
 
 parser = argparse.ArgumentParser(description='Convert a TEX file from Monster Hunter 4 Ultimate to an image')
 parser.add_argument('inputfile', help='TEX input file')
-parser.add_argument('outputfile', help='image output file')
+parser.add_argument('outputfile', nargs='?', default=None, help='image output file')
 args = parser.parse_args()
 
-convert_tex(args.inputfile, args.outputfile)
+if os.path.isdir(args.inputfile):
+    for dirpath, dirnames, filenames in os.walk(args.inputfile):
+        for filename in filenames:
+            if filename.endswith('.tex'):
+                convert_tex(os.path.join(dirpath, filename))
+else:
+    convert_tex(args.inputfile, args.outputfile)
 

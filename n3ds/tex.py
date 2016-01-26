@@ -17,6 +17,7 @@
 
 import argparse
 import array
+import os
 
 from PIL import Image
 
@@ -146,7 +147,7 @@ def deblock(width, size, data):
             new[(x+y*width)*size+j] = data[i*size+j]
     return bytes(new)
 
-def convert_tex(tex_file, png_file):
+def convert_tex(tex_file, png_file=None):
     tex = open(tex_file, 'rb')
 
     header = array.array('I', tex.read(16))
@@ -184,6 +185,9 @@ def convert_tex(tex_file, png_file):
         pixel_data = tex.read()
 
     tex.close()
+
+    if png_file is None:
+        png_file = '{}.png'.format(tex_file)
 
     if color_type == 1:
         image = Image.frombytes('RGBA', (width, height), deblock(width, 4, decode_4444(pixel_data)), 'raw', 'ABGR')
@@ -228,8 +232,14 @@ def convert_tex(tex_file, png_file):
 
 parser = argparse.ArgumentParser(description='Convert a TEX file from Monster Hunter 4 Ultimate to an image')
 parser.add_argument('inputfile', help='TEX input file')
-parser.add_argument('outputfile', help='image output file')
+parser.add_argument('outputfile', nargs='?', default=None, help='image output file')
 args = parser.parse_args()
 
-convert_tex(args.inputfile, args.outputfile)
+if os.path.isdir(args.inputfile):
+    for dirpath, dirnames, filenames in os.walk(args.inputfile):
+        for filename in filenames:
+            if filename.endswith('.tex'):
+                convert_tex(os.path.join(dirpath, filename))
+else:
+    convert_tex(args.inputfile, args.outputfile)
 
