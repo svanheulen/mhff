@@ -147,7 +147,7 @@ def deblock(width, size, data):
             new[(x+y*width)*size+j] = data[i*size+j]
     return bytes(new)
 
-def convert_tex(tex_file, png_file=None):
+def convert_tex(tex_file, png_file=None, ignore_alpha=False):
     tex = open(tex_file, 'rb')
 
     header = array.array('I', tex.read(16))
@@ -191,12 +191,18 @@ def convert_tex(tex_file, png_file=None):
 
     if color_type == 1:
         image = Image.frombytes('RGBA', (width, height), deblock(width, 4, decode_4444(pixel_data)), 'raw', 'ABGR')
+        if ignore_alpha:
+            image = image.convert('RGB')
         image.save(png_file)
     elif color_type == 2:
         image = Image.frombytes('RGBA', (width, height), deblock(width, 4, decode_1555(pixel_data)), 'raw', 'ABGR')
+        if ignore_alpha:
+            image = image.convert('RGB')
         image.save(png_file)
     elif color_type == 3:
         image = Image.frombytes('RGBA', (width, height), deblock(width, 4, pixel_data), 'raw', 'ABGR')
+        if ignore_alpha:
+            image = image.convert('RGB')
         image.save(png_file)
     elif color_type == 4:
         image = Image.frombytes('RGB', (width, height), deblock(width, 3, decode_565(pixel_data)), 'raw', 'BGR')
@@ -211,9 +217,13 @@ def convert_tex(tex_file, png_file=None):
         image.save(png_file)
     elif color_type == 11:
         image = Image.frombytes('RGBA', (width, height), decode_etc1(pixel_data, width), 'raw', 'RGBA')
+        if ignore_alpha:
+            image = image.convert('RGB')
         image.save(png_file)
     elif color_type == 12:
         image = Image.frombytes('RGBA', (width, height), decode_etc1(pixel_data, width, True), 'raw', 'RGBA')
+        if ignore_alpha:
+            image = image.convert('RGB')
         image.save(png_file)
     elif color_type == 14: # format may not be correct
         image = Image.frombytes('L', (width, height), deblock(width, 1, decode_4444(pixel_data)), 'raw', 'L')
@@ -231,6 +241,7 @@ def convert_tex(tex_file, png_file=None):
         raise ValueError('unknown texture color type')
 
 parser = argparse.ArgumentParser(description='Convert a TEX file from Monster Hunter 4 Ultimate to an image')
+parser.add_argument('--ignore-alpha', action='store_true', default=False, help='ingore texture alpha channel')
 parser.add_argument('inputfile', help='TEX input file')
 parser.add_argument('outputfile', nargs='?', default=None, help='image output file')
 args = parser.parse_args()
@@ -239,7 +250,7 @@ if os.path.isdir(args.inputfile):
     for dirpath, dirnames, filenames in os.walk(args.inputfile):
         for filename in filenames:
             if filename.endswith('.tex'):
-                convert_tex(os.path.join(dirpath, filename))
+                convert_tex(os.path.join(dirpath, filename), ignore_alpha=args.ignore_alpha)
 else:
-    convert_tex(args.inputfile, args.outputfile)
+    convert_tex(args.inputfile, args.outputfile, args.ignore_alpha)
 
