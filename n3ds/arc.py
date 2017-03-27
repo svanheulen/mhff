@@ -377,7 +377,7 @@ file_types = [
 def gen_file_type_codes():
     return [(zlib.crc32(file_type[0].encode()) ^ 0xffffffff) & 0x7fffffff for file_type in file_types]
 
-def extract_arc(arc_file, output_path):
+def extract_arc(arc_file, output_path, file_list):
     if not os.path.isdir(output_path):
         raise ValueError('output path: must be existing directory')
     arc = open(arc_file, 'rb')
@@ -388,6 +388,8 @@ def extract_arc(arc_file, output_path):
         raise ValueError('header: invalid version')
     file_type_codes = gen_file_type_codes()
     toc = arc.read(file_count * 0x50)
+    if file_list:
+        file_list = open(file_list, 'w')
     for i in range(file_count):
         file_name, file_type_code, compressed_size, size, offset = struct.unpack('64sIIII', toc[i*0x50:(i+1)*0x50])
         file_type = 'UNKNOWN'
@@ -395,6 +397,8 @@ def extract_arc(arc_file, output_path):
         if file_type_code in file_type_codes:
             file_type, file_extension = file_types[file_type_codes.index(file_type_code)]
         file_name = os.path.join(*file_name.decode().strip('\x00').split('\\')) + '.' + file_extension
+        if file_list:
+            file_list.write(file_name + '\n')
         if version == 0x13:
             size &= 0x0fffffff
         else:
@@ -440,17 +444,26 @@ def create_arc(arc_file, input_files):
 parser = argparse.ArgumentParser(description='Extracts files from an ARC file from MH4U and MHX')
 subparsers = parser.add_subparsers(dest='mode')
 parser_x = subparsers.add_parser('x')
+parser_x.add_argument('--filelist', help='file list output')
 parser_x.add_argument('inputfile', help='ARC input file')
 parser_x.add_argument('outputpath', nargs='?', default='./', help='output path')
 parser_c = subparsers.add_parser('c')
+parser_c.add_argument('--filelist', help='file list input')
 parser_c.add_argument('outputfile', help='ARC output file')
-parser_c.add_argument('inputfile', nargs='+', help='input files')
+parser_c.add_argument('inputfile', nargs='*', help='input files')
 args = parser.parse_args()
 
 if args.mode == 'x':
-    extract_arc(args.inputfile, args.outputpath)
+    extract_arc(args.inputfile, args.outputpath, args.filelist)
 elif args.mode == 'c':
     input_files = []
+    try:
+        for line in open(args.filelist, 'r'):
+            line = line.strip()
+            if line != '':
+                input_files.append(line)
+    except:
+        pass
     for input_file in args.inputfile:
         if os.path.isdir(input_file):
             for dirpath, dirnames, filenames in os.walk(input_file):
